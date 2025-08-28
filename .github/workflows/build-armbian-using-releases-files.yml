@@ -27,6 +27,7 @@ on:
         type: choice
         options:
           - all
+          - s905d_s922x_s922x-ct2000_s905x3_vplus_wxy-oect
           - top50
           - rest50
           - a311d-oes_s905d_s905x3_s922x-ct2000_wxy-oect
@@ -210,9 +211,10 @@ on:
       kernel_repo:
         description: "Set the kernel repository."
         required: false
-        default: "ophub/kernel"
+        default: "0118Add/kernel"
         type: choice
         options:
+          - 0118Add/kernel
           - ophub/kernel
       kernel_usage:
         description: "Set the tags of the stable kernel."
@@ -243,7 +245,7 @@ on:
       builder_name:
         description: "Set Armbian builder signature."
         required: false
-        default: "ophub"
+        default: "angel"
         type: choice
         options:
           - ophub
