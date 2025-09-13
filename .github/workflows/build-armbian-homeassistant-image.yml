@@ -178,6 +178,7 @@ on:
           - tqc-a01
           - tvi3315a
           - vplus
+          - wocyber-a3
           - wxy-oect
           - wxy-oect-replaced
           - xiaobao
@@ -250,7 +251,7 @@ on:
           - dy008
 
 env:
-  TZ: America/New_York
+  TZ: Etc/UTC
   ROOTFS_SCRIPT: compile-kernel/tools/script/docker/build_armbian_rootfs_file.sh
 
 jobs:

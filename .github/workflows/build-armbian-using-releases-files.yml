@@ -179,6 +179,7 @@ on:
           - tqc-a01
           - tvi3315a
           - vplus
+          - wocyber-a3
           - wxy-oect
           - wxy-oect-replaced
           - xiaobao
@@ -252,7 +253,7 @@ on:
           - angel
 
 env:
-  TZ: America/New_York
+  TZ: Etc/UTC
 
 jobs:
   build:
