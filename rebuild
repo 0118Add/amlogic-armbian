@@ -87,9 +87,8 @@ kernel_repo="https://github.com/ophub/kernel"
 default_tags="stable"
 kernel_usage=""
 # Set the list of kernels used by default(Selectable version)
-stable_kernel=("5.15.y" "6.1.y")
+stable_kernel=("6.1.y" "6.12.y")
 flippy_kernel=(${stable_kernel[@]})
-dev_kernel=(${stable_kernel[@]})
 beta_kernel=(${stable_kernel[@]})
 rk3588_kernel=("6.1.y")
 rk35xx_kernel=("6.1.y")
@@ -157,7 +156,7 @@ mount_try() {
         else
             sync && sleep 3
             umount -f ${m_target} 2>/dev/null
-            t="$((t + 1))"
+            ((t++))
         fi
     done
     [[ "${t}" -gt "${max_try}" ]] && error_msg "[ ${t} ] attempts to mount failed."
@@ -209,9 +208,8 @@ init_var() {
             if [[ -n "${2}" ]]; then
                 oldIFS="${IFS}"
                 IFS="_"
-                flippy_kernel=(${2})
                 stable_kernel=(${2})
-                dev_kernel=(${2})
+                flippy_kernel=(${2})
                 beta_kernel=(${2})
                 specific_kernel=(${2})
                 IFS="${oldIFS}"
@@ -344,7 +342,7 @@ check_data() {
         fi
 
         # If auto_kernel is false, use the value from -k parameter
-        if [[ "${auto_kernel}" != "true" ]]; then
+        if [[ ! "${auto_kernel}" =~ ^(true|yes)$ ]]; then
             if [[ "${#specific_kernel[@]}" -eq 0 ]]; then
                 error_msg "Plase use the -k parameter to specify the kernel version."
             else
@@ -469,13 +467,13 @@ query_kernel() {
 
                 echo -e "${INFO} (${x}.${i}) [ ${key} - ${tmp_arr_kernels[$i]} ] is latest kernel. \n"
 
-                let i++
+                ((i++))
             done
 
             # Assign the latest kernel version to the array
             tags_list[${key}]="${tmp_arr_kernels[@]}"
 
-            let x++
+            ((x++))
         }
     done
 }
@@ -529,14 +527,14 @@ download_kernel() {
                 # If the kernel contains the sha256sums file, check the files integrity
                 [[ -f "${kernel_path}/${key}/${kernel_var}/sha256sums" ]] && check_kernel "${kernel_path}/${key}/${kernel_var}"
 
-                let i++
+                ((i++))
             done
 
             # Delete downloaded kernel temporary files
             rm -f ${kernel_path}/${key}/*.tar.gz
             sync
 
-            let x++
+            ((x++))
         }
     done
 }
@@ -1024,13 +1022,17 @@ refactor_rootfs() {
         # Custom banner name
         sed -i "s|^BOARD=.*|BOARD=\"${board}\"|g" ${armbian_release_file}
         sed -i "s|^BOARD_NAME=.*|BOARD_NAME=\"${board}\"|g" ${armbian_release_file}
+        sed -i "s|^BOARDFAMILY=.*|BOARDFAMILY=\"${FAMILY}\"|g" ${armbian_release_file}
         # Use custom type to remove [ No end-user support ] prompt in [ /etc/update-motd.d/10-armbian-header ]
+        sed -i "s|^BOOT_SOC=.*|BOOT_SOC=\"${SOC}\"|g" ${armbian_release_file}
         sed -i "s|^IMAGE_TYPE=.*|IMAGE_TYPE=rebuild|g" ${armbian_release_file}
         sed -i "s|^BOARD_TYPE=.*|BOARD_TYPE=diy|g" ${armbian_release_file}
         sed -i "s|^VENDOR=.*|VENDOR=\"Armbian OS\"|g" ${armbian_release_file}
         # Disable the update of the boot script
         sed -i "s|^FORCE_BOOTSCRIPT_UPDATE=.*|FORCE_BOOTSCRIPT_UPDATE=\"no\"|g" ${armbian_release_file}
         sed -i "s|^BOOTSCRIPT_FORCE_UPDATE=.*|FORCE_BOOTSCRIPT_UPDATE=\"no\"|g" ${armbian_release_file}
+        # Disable the update of the u-boot
+        sed -i "s|^FORCE_UBOOT_UPDATE=.*|FORCE_UBOOT_UPDATE=\"no\"|g" ${armbian_release_file}
     }
 
     # Add custom startup script
@@ -1057,7 +1059,7 @@ refactor_rootfs() {
     # Disable tips of the day for [ /etc/update-motd.d/35-armbian-tips ]
     motd_tips="etc/default/armbian-motd"
     [[ -f "${motd_tips}" ]] && sed -i 's|^MOTD_DISABLE=.*|MOTD_DISABLE="tips"|g' ${motd_tips}
-    quotes_cron="etc/cron.weekly/armbian-quotes"
+    quotes_cron="etc/cron.daily/armbian-quotes"
     [[ -f "${quotes_cron}" ]] && sed -i "s|^curl |#curl |g" ${quotes_cron}
 
     # Add custom disabled alias extension load modules
@@ -1073,6 +1075,19 @@ refactor_rootfs() {
 
     # Renaming/disabling related files
     mv -f etc/udev/rules.d/hdmi.rules etc/udev/rules.d/hdmi.rules.bak 2>/dev/null
+
+    # Disable motd scripts
+    [[ -d "etc/update-motd.d" ]] && {
+        chmod -x etc/update-motd.d/*
+        chmod +x etc/update-motd.d/{10-*,20-*,30-*}
+    }
+
+    # Disable IP information display
+    ip_info_file="etc/update-motd.d/20-ip-info"
+    [[ -f "${ip_info_file}" ]] && {
+        sed -i '/^get_wan.*_address/s/{.*/{ true; }/' ${ip_info_file}
+        sed -i '/if.*ipv6s.*||.*wan6/,/fi/s/^/#/' ${ip_info_file}
+    }
 
     # Explicitly disable resizing for Amlogic device [ /usr/lib/armbian/armbian-resize-filesystem ], use armbian-tf settings
     echo "yes" >root/.no_rootfs_resize
@@ -1216,11 +1231,11 @@ loop_rebuild() {
                     clean_tmp
 
                     echo -e "(${j}.${i}) Armbian build successfully. \n"
-                    let i++
+                    ((i++))
                 }
             done
 
-            let j++
+            ((j++))
         }
     done
 }
@@ -1239,7 +1254,7 @@ find_armbian
 # Download the dependency files
 download_depends
 # Query the latest kernel version
-[[ "${auto_kernel}" == "true" ]] && query_kernel
+[[ "${auto_kernel}" =~ ^(true|yes)$ ]] && query_kernel
 # Download the kernel files
 download_kernel
 
@@ -1256,5 +1271,3 @@ loop_rebuild
 # Show server end information
 echo -e "${STEPS} Server space usage after compilation: \n$(df -hT ${armbian_outputpath}) \n"
 echo -e "${SUCCESS} All process completed successfully."
-# All process completed
-wait

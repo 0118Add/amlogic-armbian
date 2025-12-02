@@ -183,7 +183,7 @@ on:
           - vplus
           - wocyber-a3
           - wxy-oect
-          - wxy-oect-replaced
+          - wxy-oect-mod
           - xiaobao
           - yskj
           - zcube1-max
@@ -192,7 +192,7 @@ on:
       armbian_kernel:
         description: "Select kernel version."
         required: false
-        default: "5.15.y_6.1.y"
+        default: "6.1.y_6.12.y"
         type: choice
         options:
           - 5.4.y
@@ -227,7 +227,6 @@ on:
         options:
           - stable
           - flippy
-          - dev
           - beta
       armbian_fstype:
         description: "Select armbian rootfs type."
@@ -309,17 +308,6 @@ jobs:
           sudo mkdir -p /builder
           sudo mount /dev/github/runner /builder
           sudo chown -R runner:runner /builder
-          # Prepare cached directory
-          echo "Preparing cached directory..."
-          sudo cp -af /home/runner/actions-runner/cached /builder/cached
-          rm -rf /home/runner/actions-runner/cached
-          sudo ln -sf /builder/cached /home/runner/actions-runner/cached
-          echo "_diag directory content:"
-          ls -lh /home/runner/actions-runner/cached/_diag/ 2>/dev/null
-          echo "Verifying the symbolic link..."
-          ls -ld /home/runner/actions-runner/cached
-          df -Th /home/runner/actions-runner/cached
-          echo "Server disk layout:"
           df -Th
           echo "status=success" >> ${GITHUB_OUTPUT}
 
@@ -336,7 +324,7 @@ jobs:
           latest_version=$(curl -s \
                 -H "Accept: application/vnd.github+json" \
                 -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                https://api.github.com/repos/${{ github.repository }}/releases?per_page=100 | \
+                https://api.github.com/repos/${{ github.repository }}/releases?per_page=20 | \
                 jq -r --arg RTK "Armbian_${{ inputs.set_release }}_arm64_" \
                 --arg BOARD "-trunk_" \
                 '[.[] | select(.tag_name | contains($RTK))] |

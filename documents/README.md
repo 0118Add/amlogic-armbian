@@ -33,6 +33,10 @@ GitHub Actions is a service launched by Microsoft that provides a virtual server
       - [8.2.5 Installation method for Chainedbox-L1-Pro](#825-installation-method-for-chainedbox-l1-pro)
       - [8.2.6 Installation method for lckfb-tspi](#826-installation-method-for-lckfb-tspi)
     - [8.3 Allwinner Series Installation Method](#83-allwinner-series-installation-method)
+    - [8.4 Installation Method for the Docker Version of Armbian](#84-installation-method-for-the-docker-version-of-armbian)
+      - [8.4.1 Install Docker Runtime Environment](#841-install-docker-runtime-environment)
+      - [8.4.2 Configure macvlan Network](#842-configure-macvlan-network)
+      - [8.4.3 Run Armbian Docker Container](#843-run-armbian-docker-container)
   - [9. Compiling Armbian Kernel](#9-compiling-armbian-kernel)
     - [9.1 How to Add Custom Kernel Patches](#91-how-to-add-custom-kernel-patches)
     - [9.2 How to Make Kernel Patches](#92-how-to-make-kernel-patches)
@@ -374,6 +378,68 @@ Log in to the Armbian system (default user: root, default password: 1234) → En
 armbian-install
 ```
 
+### 8.4 Installation Method for the Docker Version of Armbian
+
+You can use Docker versions of Armbian images on Ubuntu/Debian/Armbian systems. These images are hosted on [Docker Hub](https://hub.docker.com/r/ophub) and can be downloaded directly for use.
+
+Four Armbian Docker images with different base versions are provided: `armbian-trixie`, `armbian-bookworm`, `armbian-noble`, and `armbian-jammy`. Each version has both `arm64` and `amd64` builds, allowing you to choose the appropriate version based on your needs.
+
+Among them, armbian-trixie is based on Debian 13, armbian-bookworm is based on Debian 12, armbian-noble is based on Ubuntu 24.04, and armbian-jammy is based on Ubuntu 22.04.
+
+The arm64 version is suitable for devices with platform architectures such as Amlogic/Rockchip/Allwinner, while the amd64 version is suitable for computers and servers with x86_64 architecture.
+
+#### 8.4.1 Install Docker Runtime Environment
+
+```shell
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+sudo newgrp docker
+```
+
+#### 8.4.2 Configure macvlan Network
+
+```shell
+# Check if existing docker networks include a macvlan network
+docker network ls
+
+# If there is no macvlan network, create one
+# Modify the subnet, gateway, and interface name according to your actual network
+docker network create -d macvlan \
+    --subnet=10.1.1.0/24 \
+    --gateway=10.1.1.1 \
+    -o parent=eth0 \
+    macvlan
+```
+
+#### 8.4.3 Run Armbian Docker Container
+
+Here, the `armbian-trixie:arm64` image is used as an example to demonstrate how to run an Armbian container.
+
+```shell
+# Run the Armbian container in detached mode
+# Modify the container name, IP address, image version, etc., according to your actual situation
+docker run -itd --name=armbian-trixie \
+    --privileged \
+    --network macvlan \
+    --ip 10.1.1.15 \
+    --hostname=armbian-trixie \
+    -e TZ=Asia/Shanghai \
+    --restart unless-stopped \
+    ophub/armbian-trixie:arm64
+
+# View Armbian container logs
+docker logs -f armbian-trixie
+
+# Enter the Armbian container
+docker exec -it armbian-trixie bash
+
+# Exit the Armbian container
+exit
+
+# Stop and remove the Armbian container
+docker rm -f armbian-trixie
+```
+
 ## 9. Compiling Armbian Kernel
 
 Kernel compilation is supported in Ubuntu, Debian or Armbian systems. Both local compilation and GitHub Actions cloud compilation are supported. For specific methods, please refer to the [Kernel Compilation Instructions](../../compile-kernel).
@@ -501,14 +567,14 @@ armbian-update
 | Optional Parameters | Default Value | Options | Description |
 | -------- | ------------ | ------------- | -------------------------------- |
 | -r | ophub/kernel | `<owner>/<repo>` | Set the repository to download the kernel from github.com |
-| -u | Automatic | stable/flippy/dev/rk3588/rk35xx/h6 | Set the suffix of the used kernel's [tags](https://github.com/ophub/kernel/releases) |
+| -u | Automatic | stable/flippy/beta/rk3588/rk35xx/h6 | Set the suffix of the used kernel's [tags](https://github.com/ophub/kernel/releases) |
 | -k | Latest Version | Kernel Version | Set the [Kernel Version](https://github.com/ophub/kernel/releases/tag/kernel_stable) |
 | -b | yes | yes/no | Automatically backup the kernel currently in use when updating the kernel |
 | -m | no | yes/no | Use the mainline u-boot |
 | -s | None | None/DiskName | [SOS] Restore the system kernel in eMMC/NVMe/sdX and other disks |
 | -h | None | None | View the usage help |
 
-Example: `armbian-update -k 5.15.50 -u dev`
+Example: `armbian-update -k 5.15.50 -u stable`
 
 When specifying the kernel version number through the `-k` parameter, you can accurately specify the specific version number, such as: `armbian-update -k 5.15.50`, or you can specify the kernel series vaguely, such as: `armbian-update -k 5.15`, when vaguely specifying, it will automatically use the latest version of the specified series.
 

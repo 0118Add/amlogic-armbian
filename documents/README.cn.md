@@ -33,6 +33,10 @@ Github Actions 是 Microsoft 推出的一项服务，它提供了性能配置非
       - [8.2.5 我家云的安装方法](#825-我家云的安装方法)
       - [8.2.6 泰山派的安装方法](#826-泰山派的安装方法)
     - [8.3 Allwinner 系列安装方法](#83-allwinner-系列安装方法)
+    - [8.4 Docker 版本的 Armbian 安装方法](#84-docker-版本的-armbian-安装方法)
+      - [8.4.1 安装 Docker 运行环境](#841-安装-docker-运行环境)
+      - [8.4.2 设置 macvlan 网络](#842-设置-macvlan-网络)
+      - [8.4.3 运行 Armbian Docker 容器](#843-运行-armbian-docker-容器)
   - [9. 编译 Armbian 内核](#9-编译-armbian-内核)
     - [9.1 如何添加自定义内核补丁](#91-如何添加自定义内核补丁)
     - [9.2 如何制作内核补丁](#92-如何制作内核补丁)
@@ -374,6 +378,68 @@ dd if=armbian.img  of=/dev/nvme0n1  bs=1M status=progress
 armbian-install
 ```
 
+### 8.4 Docker 版本的 Armbian 安装方法
+
+可以在 Ubuntu/Debian/Armbian 系统中使用 Docker 版本的 Armbian 镜像。这些镜像托管在 [Docker Hub](https://hub.docker.com/r/ophub) 上，可以直接下载使用。
+
+提供了四个不同内核版本的 Armbian Docker 镜像：`armbian-trixie`，`armbian-bookworm`，`armbian-noble`，`armbian-jammy`。每个版本都有 `arm64` 和 `amd64` 版本，可以根据需要选择不同的内核版本。
+
+其中 armbian-trixie 基于 debian13，armbian-bookworm 基于 debian12，armbian-noble 基于 ubuntu24.04，armbian-jammy 基于 ubuntu22.04。
+
+arm64 版本适用于 Amlogic/Rockchip/Allwinner 等平台架构的设备，amd64 版本适用于 x86_64 架构的电脑和服务器。
+
+#### 8.4.1 安装 Docker 运行环境
+
+```shell
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+sudo newgrp docker
+```
+
+#### 8.4.2 设置 macvlan 网络
+
+```shell
+# 查看已有的 docker 网络是否包含 macvlan 网络
+docker network ls
+
+# 如果没有 macvlan 网络，则创建 macvlan 网络
+# 其中的网段、网关和网卡名称根据自己的实际网络修改
+docker network create -d macvlan \
+    --subnet=10.1.1.0/24 \
+    --gateway=10.1.1.1 \
+    -o parent=eth0 \
+    macvlan
+```
+
+#### 8.4.3 运行 Armbian Docker 容器
+
+这里以 `armbian-trixie:arm64` 镜像为例，介绍如何运行 Armbian 容器。
+
+```shell
+# 以后台方式运行 Armbian 容器
+# 其中的容器名称，IP 地址，镜像版本等根据自己的实际情况修改
+docker run -itd --name=armbian-trixie \
+    --privileged \
+    --network macvlan \
+    --ip 10.1.1.15 \
+    --hostname=armbian-trixie \
+    -e TZ=Asia/Shanghai \
+    --restart unless-stopped \
+    ophub/armbian-trixie:arm64
+
+# 查看 Armbian 容器日志
+docker logs -f armbian-trixie
+
+# 进入 Armbian 容器
+docker exec -it armbian-trixie bash
+
+# 退出 Armbian 容器
+exit
+
+# 停止并删除 Armbian 容器
+docker rm -f armbian-trixie
+```
+
 ## 9. 编译 Armbian 内核
 
 支持在 Ubuntu，debian 或 Armbian 系统中编译内核。支持本地编译，也支持使用 GitHub Actions 云编译，具体方法详见 [内核编译说明](../../compile-kernel/README.cn.md)。
@@ -500,14 +566,14 @@ armbian-update
 | 可选参数  | 默认值        | 选项           | 说明                              |
 | -------- | ------------ | ------------- | -------------------------------- |
 | -r       | ophub/kernel | `<owner>/<repo>` | 设置从 github.com 下载内核的仓库  |
-| -u       | 自动化        | stable/flippy/dev/rk3588/rk35xx/h6 | 设置使用的内核的 [tags 后缀](https://github.com/ophub/kernel/releases) |
+| -u       | 自动化        | stable/flippy/beta/rk3588/rk35xx/h6 | 设置使用的内核的 [tags 后缀](https://github.com/ophub/kernel/releases) |
 | -k       | 最新版        | 内核版本       | 设置[内核版本](https://github.com/ophub/kernel/releases/tag/kernel_stable)  |
 | -b       | yes          | yes/no        | 更新内核时自动备份当前系统使用的内核    |
 | -m       | no           | yes/no        | 使用主线 u-boot                    |
 | -s       | 无           | 无/磁盘名称     | [SOS] 恢复 eMMC/NVMe/sdX 等磁盘中的系统内核 |
 | -h       | 无           | 无             | 查看使用帮助                       |
 
-举例: `armbian-update -k 5.15.50 -u dev`
+举例: `armbian-update -k 5.15.50 -u stable`
 
 通过 `-k` 参数指定内核版本号时，可以准确指定具体版本号，例如：`armbian-update -k 5.15.50`，也可以模糊指定到内核系列，例如：`armbian-update -k 5.15`，当模糊指定时将自动使用指定系列的最新版本。
 

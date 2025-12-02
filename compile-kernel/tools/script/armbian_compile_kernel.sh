@@ -19,6 +19,7 @@
 #================================= Functions list =================================
 #
 # error_msg          : Output error message
+# log_to_file        : Log kernel compilation output to a file
 #
 # init_var           : Initialize all variables
 # toolchain_check    : Check and install the toolchain
@@ -58,7 +59,7 @@ modules_backup_path="${tmp_backup_path}/modules"
 
 # Set the system file path to be used
 arch_info="$(uname -m)"
-host_release="$(cat /etc/os-release | grep '^VERSION_CODENAME=.*' | cut -d"=" -f2)"
+host_release="$(cat /etc/os-release 2>/dev/null | grep '^VERSION_CODENAME=.*' | cut -d"=" -f2)"
 initramfs_conf="/etc/initramfs-tools/update-initramfs.conf"
 ophub_release_file="/etc/ophub-release"
 
@@ -77,10 +78,15 @@ custom_name="-ophub"
 package_list="all"
 # Set the compression format, options: [ gzip / lzma / xz / zstd ]
 compress_format="xz"
+# Set whether to clear ccache before compiling the kernel, options: [ true / false ]
+ccache_clear="false"
 # Set whether to automatically delete the source code after the kernel is compiled
 delete_source="false"
-# Set make log silent output (recommended to use 'true' when github runner has insufficient space)
+# Set make log silent output, options: [ true / false ]
 silent_log="false"
+# Set whether to log compilation output to file, options: [ true / false ]
+enable_log="false"
+output_logfile="/var/log/kernel_compile_$(date +%Y-%m-%d_%H-%M-%S).log"
 
 # Compile toolchain download mirror, run on Armbian
 dev_repo="https://github.com/ophub/kernel/releases/download/dev"
@@ -90,6 +96,16 @@ gun_file="arm-gnu-toolchain-14.3.rel1-aarch64-aarch64-none-linux-gnu.tar.xz"
 toolchain_path="/usr/local/toolchain"
 # Set the default cross-compilation toolchain: [ clang / gcc / gcc-14.2, etc. ]
 toolchain_name="gcc"
+
+# CCACHE Configuration
+# Force specific cache directory (Override defaults)
+export CCACHE_DIR="/root/.ccache"
+# Rewrite absolute paths to relative (Enable Host/Docker sharing)
+export CCACHE_BASEDIR="${compile_path}"
+export CCACHE_NOHASHDIR="true"
+# Check compiler by content hash, not modification time
+export CCACHE_SLOPPINESS="time_macros,file_macro,include_file_ctime,include_file_mtime,system_headers,locale"
+export CCACHE_COMPILERCHECK="content"
 
 # Set font color
 STEPS="[\033[95m STEPS \033[0m]"
@@ -105,11 +121,22 @@ error_msg() {
     exit 1
 }
 
+log_to_file() {
+    echo -e "${STEPS} Initializing kernel compilation log..."
+
+    if touch "${output_logfile}" 2>/dev/null; then
+        echo -e "${INFO} Kernel compilation log will be saved to: [ ${output_logfile} ]"
+        exec &> >(tee -a "${output_logfile}")
+    else
+        echo -e "${WARNING} Failed to create log file [ ${output_logfile} ]. Logging to console only."
+    fi
+}
+
 init_var() {
     echo -e "${STEPS} Start Initializing Variables..."
 
     # If it is followed by [ : ], it means that the option requires a parameter value
-    local options="k:a:n:m:p:r:t:c:d:s:"
+    local options="k:a:n:m:p:r:t:c:d:s:z:l:"
     parsed_args=$(getopt -o "${options}" -- "${@}")
     [[ ${?} -ne 0 ]] && error_msg "Parameter parsing failed."
     eval set -- "${parsed_args}"
@@ -180,12 +207,12 @@ init_var() {
                 error_msg "Invalid -t parameter [ ${2} ]!"
             fi
             ;;
-        -c | --Compress)
+        -z | --CompressFormat)
             if [[ -n "${2}" ]]; then
                 compress_format="${2}"
                 shift 2
             else
-                error_msg "Invalid -c parameter [ ${2} ]!"
+                error_msg "Invalid -z parameter [ ${2} ]!"
             fi
             ;;
         -d | --DeleteSource)
@@ -202,6 +229,22 @@ init_var() {
                 shift 2
             else
                 error_msg "Invalid -s parameter [ ${2} ]!"
+            fi
+            ;;
+        -c | --CcacheClear)
+            if [[ -n "${2}" ]]; then
+                ccache_clear="${2}"
+                shift 2
+            else
+                error_msg "Invalid -c parameter [ ${2} ]!"
+            fi
+            ;;
+        -l | --EnableLog)
+            if [[ -n "${2}" ]]; then
+                enable_log="${2}"
+                shift 2
+            else
+                error_msg "Invalid -l parameter [ ${2} ]!"
             fi
             ;;
         --)
@@ -334,7 +377,7 @@ query_version() {
         fi
         echo -e "${INFO} (${i}) [ ${tmp_arr_kernels[$i]} ] is github.com/${github_kernel_repo} latest kernel. \n"
 
-        let i++
+        ((i++))
     done
 
     # Reset the kernel array to the latest kernel version
@@ -402,7 +445,7 @@ get_kernel_source() {
         local_makefile_sublevel="$(cat ${local_makefile} | grep -oE "SUBLEVEL =.*" | head -n 1 | grep -oE '[0-9]{1,3}')"
 
         # Local version and server version comparison
-        if [[ "${auto_kernel}" == "true" || "${auto_kernel}" == "yes" ]] && [[ "${kernel_sub}" -gt "${local_makefile_sublevel}" ]]; then
+        if [[ "${auto_kernel}" =~ ^(true|yes)$ ]] && [[ "${kernel_sub}" -gt "${local_makefile_sublevel}" ]]; then
             # Pull the latest source code of the server
             cd ${kernel_path}/${local_kernel_path}
             git checkout ${code_branch} && git reset --hard origin/${code_branch} && git pull
@@ -421,7 +464,7 @@ get_kernel_source() {
     rm -f ${kernel_path}/${local_kernel_path}/localversion
 
     # Apply custom kernel patches
-    [[ "${auto_patch}" == "true" || "${auto_patch}" == "yes" ]] && apply_patch
+    [[ "${auto_patch}" =~ ^(true|yes)$ ]] && apply_patch
 }
 
 headers_install() {
@@ -485,6 +528,12 @@ compile_env() {
 
     # Make clean/mrproper
     make ${MAKE_SET_STRING} CC="${CC}" LD="${LD}" mrproper
+
+    # Clear ccache if enabled
+    [[ "${ccache_clear}" =~ ^(true|yes)$ ]] && {
+        echo -e "${INFO} Clear ccache before compiling the kernel..."
+        ccache -C 2>/dev/null
+    }
 
     # Check .config file
     if [[ ! -s ".config" ]]; then
@@ -553,7 +602,7 @@ compile_kernel() {
     cd ${kernel_path}/${local_kernel_path}
 
     # Set the make log silent output
-    [[ "${silent_log}" == "true" || "${silent_log}" == "yes" ]] && silent_print="-s" || silent_print=""
+    [[ "${silent_log}" =~ ^(true|yes)$ ]] && silent_print="-s" || silent_print=""
 
     # Make kernel
     echo -e "${STEPS} Start compilation kernel [ ${local_kernel_path} ]..."
@@ -606,9 +655,12 @@ generate_uinitrd() {
     cp -rf ${output_path}/modules/lib/modules/${kernel_outname} -t /usr/lib/modules
     #echo -e "${INFO} Kernel copy results in the [ /usr/lib/modules ] directory: \n$(ls -l /usr/lib/modules) \n"
 
-    # COMPRESS: [ gzip | lzma | xz | zstd ]
-    echo -e "${INFO} Set the [ ${compress_format} ] compression format for the initrd.img file."
+    # COMPRESS: [ gzip | lzma | xz | zstd | lz4 ]
     [[ "${kernel_outname}" =~ ^5.4.[0-9]+ ]] && compress_format="xz"
+    [[ "${compress_format}" =~ ^(gzip|lzma|xz|zstd|lz4)$ ]] || {
+        echo -e "${WARNING} The compression format [ ${compress_format} ] is invalid, reset to [ xz ] format."
+        compress_format="xz"
+    }
     compress_initrd_file="/etc/initramfs-tools/initramfs.conf"
     if [[ -f "${compress_initrd_file}" ]]; then
         sed -i "s|^COMPRESS=.*|COMPRESS=${compress_format}|g" ${compress_initrd_file}
@@ -745,7 +797,7 @@ clean_tmp() {
 
     sync && sleep 3
     rm -rf ${output_path}/{boot/,dtb/,modules/,header/,${kernel_version}/}
-    [[ "${delete_source}" == "true" ]] && rm -rf ${kernel_path}/* 2>/dev/null
+    [[ "${delete_source}" =~ ^(true|yes)$ ]] && rm -rf ${kernel_path}/* 2>/dev/null
     rm -rf ${tmp_backup_path}
 
     # Show ccache statistics
@@ -795,7 +847,7 @@ loop_recompile() {
         compile_selection
         clean_tmp
 
-        let j++
+        ((j++))
     done
 }
 
@@ -808,10 +860,12 @@ echo -e "${INFO} Server running on Armbian: [ Release: ${host_release} / Host: $
 
 # Initialize variables
 init_var "${@}"
+# Output log to file
+[[ "${enable_log}" =~ ^(true|yes)$ ]] && log_to_file
 # Check and install the toolchain
 toolchain_check
 # Query the latest kernel version
-[[ "${auto_kernel}" == "true" || "${auto_kernel}" == "yes" ]] && query_version
+[[ "${auto_kernel}" =~ ^(true|yes)$ ]] && query_version
 
 # Show compile settings
 echo -e "${INFO} Kernel compilation toolchain: [ ${toolchain_name} ]"
@@ -832,5 +886,3 @@ loop_recompile
 # Show server end information
 echo -e "${STEPS} Server space usage after compilation: \n$(df -hT ${kernel_path}) \n"
 echo -e "${SUCCESS} All process completed successfully."
-# All process completed
-wait
