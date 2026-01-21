@@ -215,7 +215,7 @@ on:
           - 5.15.y_6.1.y
           - 6.1.y_6.12.y
           - 6.1.y_6.6.y
-          - 6.6.y_6.12.y
+          - 6.1.y_6.6.y_6.12.y
       auto_kernel:
         description: "Auto use the latest kernel."
         required: false
